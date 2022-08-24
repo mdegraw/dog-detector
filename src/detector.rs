@@ -17,7 +17,11 @@ impl<'a> Detector<'a> {
         Detector { model, match_set }
     }
 
-    pub fn detect(&self, frame_buffer: &FrameBuffer) -> Result<bool, anyhow::Error> {
+    pub fn detect(
+        &self,
+        frame_buffer: &FrameBuffer,
+        confidence_threshold: f32,
+    ) -> Result<bool, anyhow::Error> {
         // create RgbImage from FrameBuffer, resize it and make a Tensor out of it
         let image = image::RgbImage::from_raw(
             frame_buffer.width(),
@@ -33,20 +37,18 @@ impl<'a> Detector<'a> {
             })
             .into();
 
+        // TODO: check to see if multiple classes are returned
         // run the model on the input
         let result = self.model.run(tvec!(image))?;
 
-        // find and display the max value with its index
         let is_detected = result[0]
             .to_array_view::<f32>()?
             .iter()
             .cloned()
             .zip(1..)
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-            // .map(|(_, class_idx)| {
             .map(|(confidence, class_idx)| {
-                println!("confidence: {}, class_idx: {}", confidence, class_idx);
-                self.match_set.contains(&class_idx)
+                self.match_set.contains(&class_idx) && confidence > confidence_threshold
             });
 
         match is_detected {
