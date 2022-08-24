@@ -101,8 +101,6 @@ async fn main() -> TractResult<()> {
                     .await
                     .unwrap();
             });
-
-            break;
         }
     }
 
