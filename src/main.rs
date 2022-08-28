@@ -1,7 +1,8 @@
 mod detector;
+mod image_processing;
 
 use detector::Detector;
-use image::bmp::BmpEncoder;
+use image_processing::image_buffer_to_oled_byte_array;
 use nokhwa::{Camera, CameraFormat, FrameFormat};
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use std::collections::HashSet;
@@ -51,53 +52,29 @@ async fn main() -> TractResult<()> {
         0,
         Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
     )?;
-    camera.open_stream()?;
+    camera.open_stream().expect("Could not open camera stream");
 
     loop {
         let frame_buffer = camera.frame()?;
 
         let clone = client.clone();
-        detected_count += dog_detector.detect(&frame_buffer, 0.2)? as u32;
+        let is_detected = dog_detector
+            .detect(&frame_buffer, 0.2)
+            .expect("Error running detection model");
 
-        println!("detected_count: {}", detected_count);
+        detected_count += is_detected as u8;
+
+        // println!("detected_count: {}", detected_count);
 
         if detected_count > 12 {
-            let now = chrono::offset::Local::now();
-            println!("\n\ndog detected at {:?}\n\n", now);
+            // let now = chrono::offset::Local::now();
+            // println!("\n\ndog detected at {:?}\n\n", now);
 
-            let image = image::GrayImage::from_raw(
-                frame_buffer.width(),
-                frame_buffer.height(),
-                frame_buffer.to_vec(),
-            )
-            .unwrap();
-            let resized =
-                image::imageops::resize(&image, 128, 64, image::imageops::FilterType::Triangle);
-
-            let mut buf = Vec::new();
-            let mut encoder = BmpEncoder::new(&mut buf);
-            let data: &[u8] = &resized.as_raw();
-
-            encoder.encode(
-                data,
-                resized.width(),
-                resized.height(),
-                image::ColorType::L8,
-            )?;
-
-            let res: &[u8] = &buf;
-            let img = res.to_vec();
+            let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 44);
 
             task::spawn(async move {
-                println!("\n\nPublishing message\n\n");
                 clone
-                    .publish(
-                        DOG_DETECTION_TOPIC,
-                        QoS::AtLeastOnce,
-                        false,
-                        // String::from("hello!"),
-                        img.to_vec(),
-                    )
+                    .publish(DOG_DETECTION_TOPIC, QoS::AtLeastOnce, false, byte_array)
                     .await
                     .unwrap();
             });
@@ -106,4 +83,3 @@ async fn main() -> TractResult<()> {
 
     Ok(())
 }
-//

@@ -1,11 +1,9 @@
-use image::{ImageBuffer, Rgb};
+use crate::image_processing::FrameBuffer;
 use std::collections::HashSet;
 use tract_tensorflow::prelude::*;
 use tract_tensorflow::tract_core::anyhow;
 
-type Frame = Vec<u8>;
 type TfModel = SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>;
-type FrameBuffer = ImageBuffer<Rgb<u8>, Frame>;
 
 pub struct Detector<'a> {
     pub model: &'a TfModel,
