@@ -37,7 +37,7 @@ async fn main() -> TractResult<()> {
 
     let model = tract_tensorflow::tensorflow()
         // load the model
-        .model_for_path("models/mobilenet_v2_1.4_224_frozen.pb")?
+        .model_for_path("tensorflow/models/mobilenet_v2_1.4_224_frozen.pb")?
         // specify input type and shape
         .with_input_fact(0, f32::fact(&[1, 224, 224, 3]).into())?
         // optimize the model
