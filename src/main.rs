@@ -6,7 +6,7 @@ mod image_processing;
 use context::{Context, DetectionState, PauseState};
 use detector::Detector;
 use image_processing::image_buffer_to_oled_byte_array;
-use nokhwa::{Camera, CameraFormat, FrameFormat};
+use nokhwa::{Camera, CameraFormat, FrameFormat, NetworkCamera};
 use rumqttc::{AsyncClient, Event, MqttOptions, QoS};
 use std::collections::HashSet;
 // use std::time::Duration;
@@ -24,7 +24,7 @@ async fn main() -> TractResult<()> {
     // There's probably a better way to do this in tensorflow
     let dog_class_set: HashSet<u16> = (153..=277).collect();
 
-    let mut context = Context::new(Duration::new(30, 0), 12);
+    let mut context = Context::new(Duration::new(30, 0), 5);
 
     // TODO: pull connection strings from env
     let mut mqttoptions = MqttOptions::new("test-d322", "test.mosquitto.org", 1883);
@@ -43,10 +43,10 @@ async fn main() -> TractResult<()> {
             match &eventloop.poll().await {
                 Ok(event) => match event {
                     Event::Incoming(incoming) => {
-                        println!("incoming {:?}", incoming);
+                        // println!("incoming {:?}", incoming);
                     }
                     Event::Outgoing(outgoing) => {
-                        println!("outgoing {:?}", outgoing);
+                        // println!("outgoing {:?}", outgoing);
                     }
                 },
                 Err(_) => {}
@@ -66,10 +66,11 @@ async fn main() -> TractResult<()> {
         .into_runnable()?;
 
     let dog_detector = Detector::new(&model, &dog_class_set);
-    // let mut detected_count = 0;
 
     let mut camera = Camera::new(
-        0,
+        // TODO: set this as input arg
+        // We're using the virtual camera we created
+        2,
         Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
     )?;
     camera.open_stream().expect("Could not open camera stream");
