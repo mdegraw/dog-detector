@@ -1,52 +1,61 @@
 use crate::image_processing::FrameBuffer;
+use ndarray::prelude::*;
 use std::collections::HashSet;
-use tract_tensorflow::prelude::*;
-use tract_tensorflow::tract_core::anyhow;
-
-type TfModel = SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>;
+use std::error::Error;
+use tensorflow::{Graph, Session, SessionRunArgs, Tensor};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Detector<'a> {
-    pub model: &'a TfModel,
-    pub match_set: &'a HashSet<u16>,
+    pub graph: &'a Graph,
+    pub session: &'a Session,
+    pub match_set: &'a HashSet<u32>,
 }
 
 impl<'a> Detector<'a> {
-    pub fn new(model: &'a TfModel, match_set: &'a HashSet<u16>) -> Self {
-        Detector { model, match_set }
+    pub fn new(graph: &'a Graph, session: &'a Session, match_set: &'a HashSet<u32>) -> Self {
+        Detector {
+            graph,
+            session,
+            match_set,
+        }
     }
 
-    pub fn detect(
-        &self,
-        frame_buffer: &FrameBuffer,
-        confidence_threshold: f32,
-    ) -> Result<bool, anyhow::Error> {
-        let resized_image =
-            image::imageops::resize(frame_buffer, 224, 224, image::imageops::FilterType::Nearest);
+    pub fn detect(&self, frame_buffer: &FrameBuffer) -> Result<bool, Box<dyn Error>> {
+        let (width, height) = frame_buffer.dimensions();
+        let image_tensor = self
+            .graph
+            .operation_by_name_required("image_tensor")
+            .unwrap();
 
-        let image: Tensor =
-            tract_ndarray::Array4::from_shape_fn((1, 224, 224, 3), |(_, y, x, c)| {
-                resized_image[(x as _, y as _)][c] as f32 / 255.0
-            })
-            .into();
+        // TODO: handle unwraps
+        // Can I just use the Vec from the ImageBuffer?
+        let image_array = Array::from_shape_vec((640, 480, 3), frame_buffer.to_vec()).unwrap();
+        // let image_array = Array::from_shape_vec((640, 480, 3), resized_image.to_vec()).unwrap();
+        let image_array_expanded = image_array.insert_axis(Axis(0));
 
-        // TODO: check to see if multiple classes are returned
-        // run the model on the input
-        let result = self.model.run(tvec!(image))?;
+        let input_image_tensor = Tensor::new(&[1, height as u64, width as u64, 3])
+            .with_values(image_array_expanded.as_slice().unwrap())
+            .unwrap();
 
-        let is_detected = result[0]
-            .to_array_view::<f32>()?
-            .iter()
-            .cloned()
-            .zip(1..)
-            .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap())
-            .map(|(confidence, class_idx)| {
-                self.match_set.contains(&class_idx) && confidence > confidence_threshold
-            });
+        let mut step = SessionRunArgs::new();
 
-        match is_detected {
-            Some(val) => Ok(val),
-            None => Ok(false),
-        }
+        step.add_feed(&image_tensor, 0, &input_image_tensor);
+
+        let classes = self
+            .graph
+            .operation_by_name_required("detection_classes")
+            .unwrap();
+        let classes_token = step.request_fetch(&classes, 0);
+
+        self.session.run(&mut step).unwrap();
+
+        // let num_detections_tensor = step.fetc[h::<f32>(num_detections_token).unwrap();
+        // println!("num_detections_tensor {:?}", num_detections_tensor[0]);
+
+        let classes_tensor = step.fetch::<f32>(classes_token).unwrap();
+        let classes = classes_tensor.iter().map(|x| *x as u32).collect::<Vec<_>>();
+        let top_classification = classes[0] as u32;
+
+        Ok(self.match_set.contains(&top_classification))
     }
 }

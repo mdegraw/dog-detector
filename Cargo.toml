@@ -9,8 +9,9 @@ edition = "2021"
 chrono = "0.4.22"
 image = "0.23.14"
 rumqttc = "0.14.0"
-tract-tensorflow = "0.17.4"
 base64 = "0.13.0"
+ndarray = "0.15.6"
+tensorflow = { version = "0.19.1", features = ["eager", "ndarray"]}
 
 [dependencies.nokhwa]
 version = "0.9.4"

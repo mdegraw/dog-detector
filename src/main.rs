@@ -1,28 +1,33 @@
+extern crate tensorflow;
+
 mod context;
 mod detector;
 mod image_processing;
 
-// use context::{Context, Event, DetectionState, PauseState};
 use context::{Context, DetectionState, PauseState};
 use detector::Detector;
 use image_processing::image_buffer_to_oled_byte_array;
-use nokhwa::{Camera, CameraFormat, FrameFormat, NetworkCamera};
+use nokhwa::{Camera, CameraFormat, FrameFormat};
 use rumqttc::{AsyncClient, Event, MqttOptions, QoS};
 use std::collections::HashSet;
-// use std::time::Duration;
+use std::error::Error;
+use std::fs::File;
+use std::io::Read;
+use std::result::Result;
+use tensorflow::{Graph, ImportGraphDefOptions, Session, SessionOptions};
 use tokio::{
     task,
     time::{Duration, Instant},
 };
-use tract_tensorflow::prelude::*;
 
 static DOG_DETECTION_TOPIC: &str = "house/front_door/dog_detection";
+// TODO: Load from input arg path
+const MODEL: &str = "";
 
 #[tokio::main]
-async fn main() -> TractResult<()> {
-    // This is the range of dog ids in `imagenet_slim_labels.txt`
-    // There's probably a better way to do this in tensorflow
-    let dog_class_set: HashSet<u16> = (153..=277).collect();
+async fn main() -> Result<(), Box<dyn Error>> {
+    // This is the set of COCO categories we want to match on
+    let match_set: HashSet<u32> = HashSet::from([18]);
 
     let mut context = Context::new(Duration::new(30, 0), 5);
 
@@ -55,22 +60,25 @@ async fn main() -> TractResult<()> {
         }
     });
 
-    let model = tract_tensorflow::tensorflow()
-        // load the model
-        .model_for_path("tensorflow/models/mobilenet_v2_1.4_224_frozen.pb")?
-        // specify input type and shape
-        .with_input_fact(0, f32::fact(&[1, 224, 224, 3]).into())?
-        // optimize the model
-        .into_optimized()?
-        // make the model runnable and fix its inputs and outputs
-        .into_runnable()?;
+    let mut graph = Graph::new();
+    let mut proto = Vec::new();
 
-    let dog_detector = Detector::new(&model, &dog_class_set);
+    // TODO: add error handling
+    File::open(MODEL).unwrap().read_to_end(&mut proto).unwrap();
+
+    graph
+        .import_graph_def(&proto, &ImportGraphDefOptions::new())
+        .unwrap();
+
+    let session = Session::new(&SessionOptions::new(), &graph).unwrap();
+
+    let dog_detector = Detector::new(&graph, &session, &match_set);
 
     let mut camera = Camera::new(
         // TODO: set this as input arg
         // We're using the virtual camera we created
-        2,
+        1,
+        // 2,
         Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
     )?;
     camera.open_stream().expect("Could not open camera stream");
@@ -83,7 +91,7 @@ async fn main() -> TractResult<()> {
         let clone = client.clone();
 
         let is_detected = dog_detector
-            .detect(&frame_buffer, 0.2)
+            .detect(&frame_buffer)
             .expect("Error running detection model");
 
         let state = if is_detected {
@@ -95,8 +103,9 @@ async fn main() -> TractResult<()> {
 
         match context.next(state) {
             DetectionState::Paused(PauseState::OledStreaming) => {
-                let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 37);
+                // let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 37);
                 // let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 44);
+                let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 28);
 
                 task::spawn(async move {
                     clone
