@@ -11,4 +11,4 @@ This is a hack since `NetworkCamera` is not currently working in `nokhwa`.
 * Need OpenCV installed to use `NetworkCamera`
 * Linux needs [TensorFlow for C](https://www.tensorflow.org/install/lang_c)
 ** For Ubuntu/Debian follow instructions running `sudo ldconfig /usr/local/lib`
-** For Arch Linux `cp ibtensorflow-cpu-linux-x86_64-{}-{}-{}` to `/lib/`
+** For Arch Linux `cp libtensorflow-cpu-linux-x86_64-{}-{}-{}/*` to `/lib/`

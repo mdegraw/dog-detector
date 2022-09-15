@@ -22,8 +22,7 @@ use tokio::{
 
 static DOG_DETECTION_TOPIC: &str = "house/front_door/dog_detection";
 // TODO: Load from input arg path
-const MODEL: &str = "";
-
+const MODEL: &str = "/home/userone/Devel/dog-detector/tensorflow/models/ssd_mobilenet_v1_coco_2017_11_17/frozen_inference_graph.pb";
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // This is the set of COCO categories we want to match on
@@ -72,13 +71,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let session = Session::new(&SessionOptions::new(), &graph).unwrap();
 
-    let dog_detector = Detector::new(&graph, &session, &match_set);
+    let dog_detector = Detector::new(&graph, &session, &match_set, 0.2);
 
     let mut camera = Camera::new(
         // TODO: set this as input arg
         // We're using the virtual camera we created
-        1,
-        // 2,
+        0,
         Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
     )?;
     camera.open_stream().expect("Could not open camera stream");

@@ -9,14 +9,22 @@ pub struct Detector<'a> {
     pub graph: &'a Graph,
     pub session: &'a Session,
     pub match_set: &'a HashSet<u32>,
+    pub threshold: f32,
 }
 
 impl<'a> Detector<'a> {
-    pub fn new(graph: &'a Graph, session: &'a Session, match_set: &'a HashSet<u32>) -> Self {
+    pub fn new(
+        graph: &'a Graph,
+        session: &'a Session,
+        match_set: &'a HashSet<u32>,
+        threshold: f32,
+    ) -> Self {
         Detector {
             graph,
             session,
             match_set,
+            /// threshold is a number between 0 and 1
+            threshold,
         }
     }
 
@@ -28,7 +36,6 @@ impl<'a> Detector<'a> {
             .unwrap();
 
         // TODO: handle unwraps
-        // Can I just use the Vec from the ImageBuffer?
         let image_array = Array::from_shape_vec((640, 480, 3), frame_buffer.to_vec()).unwrap();
         // let image_array = Array::from_shape_vec((640, 480, 3), resized_image.to_vec()).unwrap();
         let image_array_expanded = image_array.insert_axis(Axis(0));
@@ -46,16 +53,28 @@ impl<'a> Detector<'a> {
             .operation_by_name_required("detection_classes")
             .unwrap();
         let classes_token = step.request_fetch(&classes, 0);
+        let scores = self
+            .graph
+            .operation_by_name_required("detection_scores")
+            .unwrap();
+
+        let scores_token = step.request_fetch(&scores, 0);
 
         self.session.run(&mut step).unwrap();
 
-        // let num_detections_tensor = step.fetc[h::<f32>(num_detections_token).unwrap();
-        // println!("num_detections_tensor {:?}", num_detections_tensor[0]);
-
         let classes_tensor = step.fetch::<f32>(classes_token).unwrap();
-        let classes = classes_tensor.iter().map(|x| *x as u32).collect::<Vec<_>>();
-        let top_classification = classes[0] as u32;
+        let scores_tensor = step.fetch::<f32>(scores_token).unwrap();
+        let results = classes_tensor
+            .iter()
+            .map(|x| *x as u32)
+            .zip(scores_tensor.iter().map(|x| *x))
+            .filter(|(class, score)| self.match_set.contains(class) && *score > self.threshold)
+            .collect::<Vec<_>>();
 
-        Ok(self.match_set.contains(&top_classification))
+        if results.len() > 0 {
+            println!("\n\n\nresults {:?}", results);
+        }
+        // Ok(self.match_set.contains(&top_classification))
+        Ok(results.len() > 0)
     }
 }
