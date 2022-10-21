@@ -37,7 +37,6 @@ impl<'a> Detector<'a> {
 
         // TODO: handle unwraps
         let image_array = Array::from_shape_vec((640, 480, 3), frame_buffer.to_vec()).unwrap();
-        // let image_array = Array::from_shape_vec((640, 480, 3), resized_image.to_vec()).unwrap();
         let image_array_expanded = image_array.insert_axis(Axis(0));
 
         let input_image_tensor = Tensor::new(&[1, height as u64, width as u64, 3])
@@ -71,10 +70,6 @@ impl<'a> Detector<'a> {
             .filter(|(class, score)| self.match_set.contains(class) && *score > self.threshold)
             .collect::<Vec<_>>();
 
-        if results.len() > 0 {
-            println!("\n\n\nresults {:?}", results);
-        }
-        // Ok(self.match_set.contains(&top_classification))
         Ok(results.len() > 0)
     }
 }
