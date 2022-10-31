@@ -12,10 +12,11 @@ rumqttc = "0.14.0"
 base64 = "0.13.0"
 ndarray = "0.15.6"
 tensorflow = { version = "0.19.1", features = ["eager", "ndarray"]}
+clap = { version = "4.0.18", features = ["derive"] }
 
 [dependencies.nokhwa]
 version = "0.9.4"
-features = ["default", "input-v4l", "input-ipcam"]
+features = ["default", "input-v4l"]
 
 [dependencies.tokio]
 version = "1.20.1"

@@ -4,34 +4,92 @@ mod context;
 mod detector;
 mod image_processing;
 
-use context::{Context, DetectionState, PauseState};
+use clap::Parser;
+use context::{Context, DetectionState};
 use detector::Detector;
 use image_processing::image_buffer_to_oled_byte_array;
 use nokhwa::{Camera, CameraFormat, FrameFormat};
-use rumqttc::{AsyncClient, Event, MqttOptions, QoS};
+use rumqttc::{AsyncClient, Event, MqttOptions, Packet, Publish, QoS};
 use std::collections::HashSet;
 use std::error::Error;
 use std::fs::File;
 use std::io::Read;
 use std::result::Result;
+use std::sync::{Arc, Mutex};
 use tensorflow::{Graph, ImportGraphDefOptions, Session, SessionOptions};
 use tokio::{
     task,
     time::{Duration, Instant},
 };
 
-static DOG_DETECTION_TOPIC: &str = "house/front_door/dog_detection";
-// TODO: Load from input arg path
-const MODEL: &str = "/home/userone/Devel/dog-detector/tensorflow/models/ssd_mobilenet_v1_coco_2017_11_17/frozen_inference_graph.pb";
+const DOG_DETECTION_TOPIC: &str = "house/front_door/dog_detection";
+const DOG_DETECTION_STREAM_TOPIC: &str = "house/front_door/dog_detection/stream";
+const DOG_DETECTION_STREAM_END_TOPIC: &str = "house/front_door/dog_detection/stream/end";
+const DOG_DETECTION_ACKNOWLEDGE_TOPIC: &str = "house/front_door/dog_detection/acknowledge";
+
+// TODO: add option to pass in config file
+#[derive(Parser)]
+#[command(name = "DogDetector")]
+#[command(author = "Michael DeGraw")]
+#[command(version = "1.0")]
+#[command(about = "Detects dogs and sends MQTT messages as an alert", long_about = None)]
+struct Cli {
+    #[arg(long, short, default_value_t = String::from("localhost"))]
+    mqtt_host: String,
+    #[arg(long, short, default_value_t = 1883)]
+    mqtt_port: u16,
+    #[arg(long, short, default_value_t = 0.2)]
+    detector_threshold: f32,
+    #[arg(long, short, default_value_t = 30)]
+    stream_duration: u64,
+    #[arg(long, short, default_value_t = 90)]
+    pause_duration: u64,
+    #[arg(long, short, default_value_t = 0)]
+    camera_index: usize,
+    #[arg(long, short, default_value_t = 30)]
+    camera_fps: u32,
+    #[arg(long, short, default_value_t = 30)]
+    oled_threshold: u8,
+    #[arg(long, short)]
+    tensorflow_model_file: String,
+}
+
+fn extract_from_event(event: &Event) -> Option<&Publish> {
+    match event {
+        Event::Incoming(incoming) => match incoming {
+            Packet::Publish(incoming_pub) => Some(incoming_pub),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[allow(unreachable_code)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    let Cli {
+        mqtt_host,
+        mqtt_port,
+        detector_threshold,
+        stream_duration,
+        pause_duration,
+        camera_index,
+        camera_fps,
+        oled_threshold,
+        tensorflow_model_file,
+    } = Cli::parse();
+
     // This is the set of COCO categories we want to match on
     let match_set: HashSet<u32> = HashSet::from([18]);
 
-    let mut context = Context::new(Duration::new(30, 0), 5);
+    let context = Arc::new(Mutex::new(Context::new(
+        Duration::new(stream_duration, 0),
+        Duration::new(pause_duration, 0),
+        5,
+    )));
 
     // TODO: pull connection strings from env
-    let mut mqttoptions = MqttOptions::new("test-d322", "test.mosquitto.org", 1883);
+    let mut mqttoptions = MqttOptions::new("dog-detection", mqtt_host, mqtt_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
@@ -40,79 +98,118 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .subscribe(DOG_DETECTION_TOPIC, QoS::AtMostOnce)
         .await?;
 
-    // poll the event loop
+    client
+        .subscribe(DOG_DETECTION_ACKNOWLEDGE_TOPIC, QoS::AtMostOnce)
+        .await?;
+
+    let thread_context = context.clone();
+
+    // we want this outside of the main detection loop
+    // poll the event loop and update the context
     task::spawn(async move {
         loop {
-            // let event = &eventloop.poll().await.unwrap();
-            match &eventloop.poll().await {
-                Ok(event) => match event {
-                    Event::Incoming(incoming) => {
-                        // println!("incoming {:?}", incoming);
+            let event = &eventloop.poll().await.unwrap();
+
+            // handle incoming event
+            if let Some(incoming_message) = extract_from_event(event) {
+                match incoming_message.topic.as_str() {
+                    DOG_DETECTION_ACKNOWLEDGE_TOPIC => {
+                        println!("INCOMING MESSAGE TOPIC: {}", incoming_message.topic);
+                        println!("INCOMING MESSAGE PAYLOAD: {:?}", incoming_message.payload);
+
+                        if let Ok(mut ctx) = thread_context.lock() {
+                            let now = Instant::now();
+                            ctx.detected_count = 0;
+                            ctx.state = DetectionState::Paused(now);
+                        }
                     }
-                    Event::Outgoing(outgoing) => {
-                        // println!("outgoing {:?}", outgoing);
-                    }
-                },
-                Err(_) => {}
-            };
-            // println!("{:?}", event.unwrap());
+                    _ => {}
+                }
+            }
         }
     });
 
     let mut graph = Graph::new();
     let mut proto = Vec::new();
 
-    // TODO: add error handling
-    File::open(MODEL).unwrap().read_to_end(&mut proto).unwrap();
+    File::open(tensorflow_model_file)?
+        .read_to_end(&mut proto)
+        .expect("Error opening tensorflow model file.");
 
-    graph
-        .import_graph_def(&proto, &ImportGraphDefOptions::new())
-        .unwrap();
+    graph.import_graph_def(&proto, &ImportGraphDefOptions::new())?;
 
-    let session = Session::new(&SessionOptions::new(), &graph).unwrap();
+    let session = Session::new(&SessionOptions::new(), &graph)?;
 
-    let dog_detector = Detector::new(&graph, &session, &match_set, 0.2);
+    let dog_detector = Detector::new(&graph, &session, &match_set, detector_threshold);
 
     let mut camera = Camera::new(
-        // TODO: set this as input arg
-        // We're using the virtual camera we created
-        0,
-        Some(CameraFormat::new_from(640, 480, FrameFormat::MJPEG, 30)),
+        camera_index,
+        Some(CameraFormat::new_from(
+            640,
+            480,
+            FrameFormat::MJPEG,
+            camera_fps,
+        )),
     )?;
     camera.open_stream().expect("Could not open camera stream");
 
-    // let mut detected_time: Option<tokio::time::Instant> = None;
+    let thread_context = context.clone();
 
     loop {
         let frame_buffer = camera.frame()?;
 
         let clone = client.clone();
 
-        let is_detected = dog_detector
-            .detect(&frame_buffer)
-            .expect("Error running detection model");
+        if let Ok(mut ctx) = thread_context.lock() {
+            match ctx.state {
+                DetectionState::Streaming(_) | DetectionState::Paused(_) => {}
+                _ => {
+                    let is_detected = dog_detector
+                        .detect(&frame_buffer)
+                        .expect("Error running detection model");
 
-        let state = if is_detected {
-            let now = Instant::now();
-            DetectionState::Detected(now)
-        } else {
-            context.state
-        };
-
-        match context.next(state) {
-            DetectionState::Paused(PauseState::OledStreaming) => {
-                // let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 37);
-                // let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 44);
-                let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, 28);
-
-                task::spawn(async move {
-                    clone
-                        .publish(DOG_DETECTION_TOPIC, QoS::AtLeastOnce, false, byte_array)
-                        .await
-                        .unwrap();
-                });
+                    if is_detected {
+                        let now = Instant::now();
+                        let clone = client.clone();
+                        if ctx.is_detected() {
+                            task::spawn(async move {
+                                clone
+                                    .publish(DOG_DETECTION_TOPIC, QoS::AtLeastOnce, false, [])
+                                    .await
+                                    .unwrap();
+                            });
+                        }
+                        ctx.state = DetectionState::Detected(now);
+                    }
+                }
             }
-            _ => {}
+
+            match ctx.next() {
+                DetectionState::Streaming(_) => {
+                    let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, oled_threshold);
+
+                    task::spawn(async move {
+                        clone
+                            .publish(
+                                DOG_DETECTION_STREAM_TOPIC,
+                                QoS::AtLeastOnce,
+                                false,
+                                byte_array,
+                            )
+                            .await
+                            .unwrap();
+                    });
+                }
+                DetectionState::StreamEnd => {
+                    task::spawn(async move {
+                        clone
+                            .publish(DOG_DETECTION_STREAM_END_TOPIC, QoS::AtLeastOnce, false, [])
+                            .await
+                            .unwrap();
+                    });
+                }
+                _ => {}
+            }
         }
     }
 
