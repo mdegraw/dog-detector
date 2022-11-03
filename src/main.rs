@@ -1,18 +1,20 @@
 extern crate tensorflow;
 
+mod config;
 mod context;
 mod detector;
 mod image_processing;
 
-use clap::Parser;
+use config::Config;
 use context::{Context, DetectionState};
 use detector::Detector;
+use directories::ProjectDirs;
 use image_processing::image_buffer_to_oled_byte_array;
 use nokhwa::{Camera, CameraFormat, FrameFormat};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, Publish, QoS};
 use std::collections::HashSet;
 use std::error::Error;
-use std::fs::File;
+use std::fs::{read_to_string, File};
 use std::io::Read;
 use std::result::Result;
 use std::sync::{Arc, Mutex};
@@ -27,33 +29,6 @@ const DOG_DETECTION_STREAM_TOPIC: &str = "house/front_door/dog_detection/stream"
 const DOG_DETECTION_STREAM_END_TOPIC: &str = "house/front_door/dog_detection/stream/end";
 const DOG_DETECTION_ACKNOWLEDGE_TOPIC: &str = "house/front_door/dog_detection/acknowledge";
 
-// TODO: add option to pass in config file
-#[derive(Parser)]
-#[command(name = "DogDetector")]
-#[command(author = "Michael DeGraw")]
-#[command(version = "1.0")]
-#[command(about = "Detects dogs and sends MQTT messages as an alert", long_about = None)]
-struct Cli {
-    #[arg(long, short, default_value_t = String::from("localhost"))]
-    mqtt_host: String,
-    #[arg(long, short, default_value_t = 1883)]
-    mqtt_port: u16,
-    #[arg(long, short, default_value_t = 0.2)]
-    detector_threshold: f32,
-    #[arg(long, short, default_value_t = 30)]
-    stream_duration: u64,
-    #[arg(long, short, default_value_t = 90)]
-    pause_duration: u64,
-    #[arg(long, short, default_value_t = 0)]
-    camera_index: usize,
-    #[arg(long, short, default_value_t = 30)]
-    camera_fps: u32,
-    #[arg(long, short, default_value_t = 30)]
-    oled_threshold: u8,
-    #[arg(long, short)]
-    tensorflow_model_file: String,
-}
-
 fn extract_from_event(event: &Event) -> Option<&Publish> {
     match event {
         Event::Incoming(incoming) => match incoming {
@@ -67,9 +42,11 @@ fn extract_from_event(event: &Event) -> Option<&Publish> {
 #[allow(unreachable_code)]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let Cli {
+    let Config {
         mqtt_host,
         mqtt_port,
+        mqtt_username,
+        mqtt_password,
         detector_threshold,
         stream_duration,
         pause_duration,
@@ -77,7 +54,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
         camera_fps,
         oled_threshold,
         tensorflow_model_file,
-    } = Cli::parse();
+    } = if let Some(proj_dirs) = ProjectDirs::from("dev", "odo", "dog-detector") {
+        let config_dir = proj_dirs.config_dir();
+        let config_file = read_to_string(config_dir.join("config.toml"));
+
+        match config_file {
+            Ok(file) => toml::from_str(&file)?,
+            Err(_) => panic!("Must provide config file!"),
+        }
+    } else {
+        panic!("Must place config.toml in the correct directory");
+    };
 
     // This is the set of COCO categories we want to match on
     let match_set: HashSet<u32> = HashSet::from([18]);
@@ -88,9 +75,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         5,
     )));
 
-    // TODO: pull connection strings from env
     let mut mqttoptions = MqttOptions::new("dog-detection", mqtt_host, mqtt_port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
+
+    if let (Some(mqtt_username), Some(mqtt_password)) = (mqtt_username, mqtt_password) {
+        mqttoptions.set_credentials(mqtt_username, mqtt_password);
+    }
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 10);
 
@@ -114,9 +104,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if let Some(incoming_message) = extract_from_event(event) {
                 match incoming_message.topic.as_str() {
                     DOG_DETECTION_ACKNOWLEDGE_TOPIC => {
-                        println!("INCOMING MESSAGE TOPIC: {}", incoming_message.topic);
-                        println!("INCOMING MESSAGE PAYLOAD: {:?}", incoming_message.payload);
-
                         if let Ok(mut ctx) = thread_context.lock() {
                             let now = Instant::now();
                             ctx.detected_count = 0;
