@@ -3,7 +3,6 @@ use tokio::time::{Duration, Instant};
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum DetectionState {
     Running,
-    StreamEnd,
     Detected(Instant),
     Paused(Instant),
     Streaming(Instant),
