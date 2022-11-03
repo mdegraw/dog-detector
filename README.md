@@ -28,8 +28,8 @@ This is a hack since `NetworkCamera` is not currently working in `nokhwa`.
 
 ### Building the Docker Images
 * For building the base arm64 image
-** `docker buildx build --load --platform linux/arm64 --file dockerfiles/rust-tf-arm64-base.Dockerfile -t orderlyllama/rust-tensorflow-arm64 .`
+** `docker buildx build --load --platform linux/arm64 --file dockerfiles/rust-tf-arm64-base.Dockerfile -t rust-tensorflow-arm64 .`
 * For building the arm64 release image
-** `docker buildx build --load --platform linux/arm64 --file dockerfiles/arm64.Dockerfile -t orderlyllama/orderlyllama/arm64-rust-build-release .`
+** `docker buildx build --load --platform linux/arm64 --file dockerfiles/arm64.Dockerfile -t arm64-rust-build-release .`
 * Building an arm64 release
-** `docker run --platform linux/arm64 --rm -v <PATH TO APPLICATION>:/app orderlyllama/arm64-rust-build-release`
+** `docker run --platform linux/arm64 --rm -v <PATH TO APPLICATION>:/app arm64-rust-build-release`
