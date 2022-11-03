@@ -195,7 +195,12 @@ void callback(char* topic, byte* payload, unsigned int length)
         detected_count += 1;
         if (detected_count > 10)
         {
-            animateLoop(true, false, strip.Color(254, 221, 0));
+            for (int i = 0; i < 5; i++)
+            {
+                clear7SegDisplay();
+                animateLoop(true, false, strip.Color(255, 0, 0));
+                strip.show();
+            }
         }
         else
         {
