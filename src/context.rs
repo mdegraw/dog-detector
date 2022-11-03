@@ -53,7 +53,7 @@ impl Context {
                 let now = Instant::now();
 
                 if now.duration_since(detected_at) > self.stream_duration {
-                    self.state = DetectionState::StreamEnd;
+                    self.state = DetectionState::Paused(now);
                 }
             }
             DetectionState::Paused(paused_at) => {

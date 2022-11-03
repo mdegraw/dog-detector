@@ -187,14 +187,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             .unwrap();
                     });
                 }
-                DetectionState::StreamEnd => {
-                    task::spawn(async move {
-                        clone
-                            .publish(DOG_DETECTION_STREAM_END_TOPIC, QoS::AtLeastOnce, false, [])
-                            .await
-                            .unwrap();
-                    });
-                }
                 _ => {}
             }
         }
