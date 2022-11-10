@@ -1,5 +1,7 @@
 # Dog Detector
 
+![My Image](images/IMG_20221110_004816.jpg)
+
 ### Usage
 * Create config file in `~/.config/dog-detector/config.toml` with path to tensorflow model file and settings
 
