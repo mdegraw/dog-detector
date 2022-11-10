@@ -23,7 +23,7 @@ This is a hack since `NetworkCamera` is not currently working in `nokhwa`.
 ### Raspberry Pi
 * Currently using a USB Webcam instead of a PiCam due to issues on an ARM64 OS
 * Install dependencies
-1. sudo apt install v4l-utils
+1. `sudo apt install v4l-utils`
 2. Follow instructions [here](https://qengineering.eu/install-tensorflow-on-raspberry-64-os.html) for installing the `TensorFlow 2.8.0 C++ API`
 
 ### Building the Docker Images
