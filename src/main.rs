@@ -26,7 +26,6 @@ use tokio::{
 
 const DOG_DETECTION_TOPIC: &str = "house/front_door/dog_detection";
 const DOG_DETECTION_STREAM_TOPIC: &str = "house/front_door/dog_detection/stream";
-const DOG_DETECTION_STREAM_END_TOPIC: &str = "house/front_door/dog_detection/stream/end";
 const DOG_DETECTION_ACKNOWLEDGE_TOPIC: &str = "house/front_door/dog_detection/acknowledge";
 
 fn extract_from_event(event: &Event) -> Option<&Publish> {
@@ -183,14 +182,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 false,
                                 byte_array,
                             )
-                            .await
-                            .unwrap();
-                    });
-                }
-                DetectionState::StreamEnd => {
-                    task::spawn(async move {
-                        clone
-                            .publish(DOG_DETECTION_STREAM_END_TOPIC, QoS::AtLeastOnce, false, [])
                             .await
                             .unwrap();
                     });

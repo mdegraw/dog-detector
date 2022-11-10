@@ -3,7 +3,6 @@ use tokio::time::{Duration, Instant};
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum DetectionState {
     Running,
-    StreamEnd,
     Detected(Instant),
     Paused(Instant),
     Streaming(Instant),
@@ -53,7 +52,7 @@ impl Context {
                 let now = Instant::now();
 
                 if now.duration_since(detected_at) > self.stream_duration {
-                    self.state = DetectionState::StreamEnd;
+                    self.state = DetectionState::Paused(now);
                 }
             }
             DetectionState::Paused(paused_at) => {
