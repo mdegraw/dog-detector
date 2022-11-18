@@ -2,7 +2,7 @@
 
 ![My Image](images/dog-detector-1.jpg)
 
-Toy project to get more familiar with Rust. Detects dogs and sends a low res bytestream to an SSD1306 OLED via MQTT.
+Toy project to get more familiar with `Rust`. Detects dogs and sends a low res byte stream to an `SSD1306 OLED` via `MQTT`.
 
 ### Usage
 * Create config file in `~/.config/dog-detector/config.toml` with path to tensorflow model file and settings
