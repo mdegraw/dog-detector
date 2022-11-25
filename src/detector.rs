@@ -1,4 +1,4 @@
-use crate::image_processing::FrameBuffer;
+use image_to_oled::FrameBuffer;
 use ndarray::prelude::*;
 use std::collections::HashSet;
 use std::error::Error;

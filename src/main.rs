@@ -3,13 +3,12 @@ extern crate tensorflow;
 mod config;
 mod context;
 mod detector;
-mod image_processing;
 
 use config::Config;
 use context::{Context, DetectionState};
 use detector::Detector;
 use directories::ProjectDirs;
-use image_processing::image_buffer_to_oled_byte_array;
+use image_to_oled::to_oled_byte_array;
 use nokhwa::{Camera, CameraFormat, FrameFormat};
 use rumqttc::{AsyncClient, Event, MqttOptions, Packet, Publish, QoS};
 use std::collections::HashSet;
@@ -171,7 +170,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             match ctx.next() {
                 DetectionState::Streaming(_) => {
-                    let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, oled_threshold);
+                    let byte_array = to_oled_byte_array(&frame_buffer, oled_threshold);
                     let client_stream = client.to_owned();
                     task::spawn(async move {
                         client_stream
