@@ -62,10 +62,6 @@ impl Context {
                     self.state = DetectionState::Running;
                 }
             }
-            DetectionState::StreamEnd => {
-                let now = Instant::now();
-                self.state = DetectionState::Paused(now);
-            }
             _ => {}
         }
         self.state

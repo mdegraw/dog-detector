@@ -9,7 +9,7 @@ fn mqtt_port_default() -> u16 {
 }
 
 fn detector_threshold_default() -> f32 {
-    0.2
+    0.7
 }
 
 fn stream_duration_default() -> u64 {

@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // poll the event loop and update the context
     task::spawn(async move {
         loop {
-            let event = &eventloop.poll().await.unwrap();
+            let event = &eventloop.poll().await.expect("Error unwrapping event");
 
             // handle incoming event
             if let Some(incoming_message) = extract_from_event(event) {
@@ -144,22 +144,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         let frame_buffer = camera.frame()?;
 
-        let clone = client.clone();
-
         if let Ok(mut ctx) = thread_context.lock() {
             match ctx.state {
-                DetectionState::Streaming(_) | DetectionState::Paused(_) => {}
-                _ => {
+                DetectionState::Running | DetectionState::Detected(_) => {
                     let is_detected = dog_detector
                         .detect(&frame_buffer)
                         .expect("Error running detection model");
 
                     if is_detected {
                         let now = Instant::now();
-                        let clone = client.clone();
+                        let client_detect = client.clone();
+
                         if ctx.is_detected() {
                             task::spawn(async move {
-                                clone
+                                client_detect
                                     .publish(DOG_DETECTION_TOPIC, QoS::AtLeastOnce, false, [])
                                     .await
                                     .unwrap();
@@ -168,14 +166,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         ctx.state = DetectionState::Detected(now);
                     }
                 }
+                _ => {}
             }
 
             match ctx.next() {
                 DetectionState::Streaming(_) => {
                     let byte_array = image_buffer_to_oled_byte_array(&frame_buffer, oled_threshold);
-
+                    let client_stream = client.to_owned();
                     task::spawn(async move {
-                        clone
+                        client_stream
                             .publish(
                                 DOG_DETECTION_STREAM_TOPIC,
                                 QoS::AtLeastOnce,
